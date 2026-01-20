@@ -271,7 +271,7 @@ async def async_request_openai_completions(
         most_recent_timestamp = st
         try:
             async with session.post(url=api_url, json=payload,
-                                    headers=headers) as response:
+                                    headers=headers, ssl=False) as response:
                 if response.status == 200:
                     first_chunk_received = False
                     async for chunk_bytes in response.content:
@@ -341,9 +341,12 @@ async def async_request_openai_chat_completions(
 
     async with aiohttp.ClientSession(trust_env=True,
                                      timeout=AIOHTTP_TIMEOUT) as session:
-        content = [{"type": "text", "text": request_func_input.prompt}]
+        # Use array format only for multi-modal, otherwise use simple string
         if request_func_input.multi_modal_content:
+            content = [{"type": "text", "text": request_func_input.prompt}]
             content.append(request_func_input.multi_modal_content)
+        else:
+            content = request_func_input.prompt
         payload = {
             "model": request_func_input.model_name \
                 if request_func_input.model_name else request_func_input.model,
@@ -367,6 +370,7 @@ async def async_request_openai_chat_completions(
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+            "X-API-KEY": os.environ.get('OPENAI_API_KEY', ''),
         }
 
         output = RequestFuncOutput()
@@ -378,7 +382,7 @@ async def async_request_openai_chat_completions(
         most_recent_timestamp = st
         try:
             async with session.post(url=api_url, json=payload,
-                                    headers=headers) as response:
+                                    headers=headers, ssl=False) as response:
                 if response.status == 200:
                     async for chunk_bytes in response.content:
                         chunk_bytes = chunk_bytes.strip()
@@ -414,7 +418,8 @@ async def async_request_openai_chat_completions(
                     output.success = True
                     output.latency = most_recent_timestamp - st
                 else:
-                    output.error = response.reason or ""
+                    error_body = await response.text()
+                    output.error = f"{response.reason or ''}: {error_body}"
                     output.success = False
         except Exception:
             output.success = False
