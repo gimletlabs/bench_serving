@@ -448,16 +448,7 @@ async def async_request_gimlet(
             pbar.update(1)
         return output
 
-    # Temporarily set OPENAI_API_KEY for the underlying function
-    original_key = os.environ.get("OPENAI_API_KEY")
-    os.environ["OPENAI_API_KEY"] = api_key
-    try:
-        return await async_request_openai_chat_completions(request_func_input, pbar)
-    finally:
-        if original_key is not None:
-            os.environ["OPENAI_API_KEY"] = original_key
-        else:
-            os.environ.pop("OPENAI_API_KEY", None)
+    return await async_request_openai_chat_completions(request_func_input, pbar)
 
 
 def get_model(pretrained_model_name_or_path: str) -> str:
