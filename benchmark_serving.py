@@ -485,6 +485,7 @@ def calculate_metrics(
         if outputs[i].success:
             output_len = outputs[i].output_tokens
 
+            # For Gimlet we need to use the tokenizer to count the number of output tokens and output_len is set to 0 not None
             if output_len is None or output_len == 0:
                 # We use the tokenizer to count the number of output tokens
                 # for some serving backends instead of looking at
