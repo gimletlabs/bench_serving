@@ -419,8 +419,7 @@ async def async_request_openai_chat_completions(
                     output.success = True
                     output.latency = most_recent_timestamp - st
                 else:
-                    error_body = await response.text()
-                    output.error = f"{response.reason or ''}: {error_body}"
+                    output.error = response.reason or ""
                     output.success = False
         except Exception:
             output.success = False
