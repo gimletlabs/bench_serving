@@ -341,12 +341,10 @@ async def async_request_openai_chat_completions(
 
     async with aiohttp.ClientSession(trust_env=True,
                                      timeout=AIOHTTP_TIMEOUT) as session:
-        # Use array format only for multi-modal, otherwise use simple string
+        content = [{"type": "text", "text": request_func_input.prompt}]
         if request_func_input.multi_modal_content:
-            content = [{"type": "text", "text": request_func_input.prompt}]
+            
             content.append(request_func_input.multi_modal_content)
-        else:
-            content = request_func_input.prompt
         payload = {
             "model": request_func_input.model_name \
                 if request_func_input.model_name else request_func_input.model,
