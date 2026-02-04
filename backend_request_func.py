@@ -341,10 +341,15 @@ async def async_request_openai_chat_completions(
 
     async with aiohttp.ClientSession(trust_env=True,
                                      timeout=AIOHTTP_TIMEOUT) as session:
-        content = [{"type": "text", "text": request_func_input.prompt}]
+        # Use array format only for multi-modal requests, otherwise use simple string.
+        # Some backends (e.g., Gimlet) only support string format for text-only requests,
+        # while the array format [{"type": "text", "text": "..."}] is required for
+        # multi-modal content that includes images or other media types.
         if request_func_input.multi_modal_content:
-            
+            content = [{"type": "text", "text": request_func_input.prompt}]
             content.append(request_func_input.multi_modal_content)
+        else:
+            content = request_func_input.prompt
         payload = {
             "model": request_func_input.model_name \
                 if request_func_input.model_name else request_func_input.model,
