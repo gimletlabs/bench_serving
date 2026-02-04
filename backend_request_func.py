@@ -436,104 +436,27 @@ async def async_request_gimlet(
     pbar: Optional[tqdm] = None,
 ) -> RequestFuncOutput:
     """
-    Async request function for Gimlet API with streaming support.
-
-    Uses X-API-KEY header authentication (no Bearer token).
-    Expects GML_API_KEY environment variable to be set.
+    Wrapper for Gimlet API - uses GML_API_KEY with X-API-KEY header.
+    Delegates to async_request_openai_chat_completions.
     """
-    api_url = request_func_input.api_url
-
-    # Get API key from environment
     api_key = os.environ.get("GML_API_KEY")
     if not api_key:
         output = RequestFuncOutput()
         output.error = "GML_API_KEY environment variable not set"
+        if pbar:
+            pbar.update(1)
         return output
 
-    async with aiohttp.ClientSession(trust_env=True,
-                                     timeout=AIOHTTP_TIMEOUT) as session:
-        content = request_func_input.prompt
-        payload = {
-            "model": request_func_input.model_name \
-                if request_func_input.model_name else request_func_input.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": content
-                },
-            ],
-            "temperature": 0.0,
-            "max_completion_tokens": request_func_input.output_len,
-            "stream": True,
-            "stream_options": {
-                "include_usage": True,
-            },
-        }
-        if request_func_input.ignore_eos:
-            payload["ignore_eos"] = request_func_input.ignore_eos
-        if request_func_input.extra_body:
-            payload.update(request_func_input.extra_body)
-        headers = {
-            "Content-Type": "application/json",
-            "X-API-KEY": api_key,
-        }
-
-        output = RequestFuncOutput()
-        output.prompt_len = request_func_input.prompt_len
-
-        generated_text = ""
-        ttft = 0.0
-        st = time.perf_counter()
-        most_recent_timestamp = st
-        try:
-            async with session.post(url=api_url, json=payload,
-                                    headers=headers, ssl=False) as response:
-                if response.status == 200:
-                    async for chunk_bytes in response.content:
-                        chunk_bytes = chunk_bytes.strip()
-                        if not chunk_bytes:
-                            continue
-
-                        chunk = chunk_bytes.decode("utf-8").removeprefix(
-                            "data: ")
-                        if chunk != "[DONE]":
-                            timestamp = time.perf_counter()
-                            data = json.loads(chunk)
-
-                            if choices := data.get("choices"):
-                                content = choices[0]["delta"].get("content")
-                                # First token
-                                if ttft == 0.0:
-                                    ttft = timestamp - st
-                                    output.ttft = ttft
-
-                                # Decoding phase
-                                else:
-                                    output.itl.append(timestamp -
-                                                      most_recent_timestamp)
-
-                                generated_text += content or ""
-                            elif usage := data.get("usage"):
-                                output.output_tokens = usage.get(
-                                    "completion_tokens")
-
-                            most_recent_timestamp = timestamp
-
-                    output.generated_text = generated_text
-                    output.success = True
-                    output.latency = most_recent_timestamp - st
-                else:
-                    error_body = await response.text()
-                    output.error = f"{response.reason or ''}: {error_body}"
-                    output.success = False
-        except Exception:
-            output.success = False
-            exc_info = sys.exc_info()
-            output.error = "".join(traceback.format_exception(*exc_info))
-
-    if pbar:
-        pbar.update(1)
-    return output
+    # Temporarily set OPENAI_API_KEY for the underlying function
+    original_key = os.environ.get("OPENAI_API_KEY")
+    os.environ["OPENAI_API_KEY"] = api_key
+    try:
+        return await async_request_openai_chat_completions(request_func_input, pbar)
+    finally:
+        if original_key is not None:
+            os.environ["OPENAI_API_KEY"] = original_key
+        else:
+            os.environ.pop("OPENAI_API_KEY", None)
 
 
 def get_model(pretrained_model_name_or_path: str) -> str:
