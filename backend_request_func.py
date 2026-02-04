@@ -271,7 +271,7 @@ async def async_request_openai_completions(
         most_recent_timestamp = st
         try:
             async with session.post(url=api_url, json=payload,
-                                    headers=headers, ssl=False) as response:
+                                    headers=headers) as response:
                 if response.status == 200:
                     first_chunk_received = False
                     async for chunk_bytes in response.content:
@@ -341,15 +341,9 @@ async def async_request_openai_chat_completions(
 
     async with aiohttp.ClientSession(trust_env=True,
                                      timeout=AIOHTTP_TIMEOUT) as session:
-        # Use array format only for multi-modal requests, otherwise use simple string.
-        # Some backends (e.g., Gimlet) only support string format for text-only requests,
-        # while the array format [{"type": "text", "text": "..."}] is required for
-        # multi-modal content that includes images or other media types.
+        content = [{"type": "text", "text": request_func_input.prompt}]
         if request_func_input.multi_modal_content:
-            content = [{"type": "text", "text": request_func_input.prompt}]
             content.append(request_func_input.multi_modal_content)
-        else:
-            content = request_func_input.prompt
         payload = {
             "model": request_func_input.model_name \
                 if request_func_input.model_name else request_func_input.model,
@@ -370,10 +364,109 @@ async def async_request_openai_chat_completions(
             payload["ignore_eos"] = request_func_input.ignore_eos
         if request_func_input.extra_body:
             payload.update(request_func_input.extra_body)
-        # For Gimlet we need to set the X-API-KEY header.
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+        }
+
+        output = RequestFuncOutput()
+        output.prompt_len = request_func_input.prompt_len
+
+        generated_text = ""
+        ttft = 0.0
+        st = time.perf_counter()
+        most_recent_timestamp = st
+        try:
+            async with session.post(url=api_url, json=payload,
+                                    headers=headers) as response:
+                if response.status == 200:
+                    async for chunk_bytes in response.content:
+                        chunk_bytes = chunk_bytes.strip()
+                        if not chunk_bytes:
+                            continue
+
+                        chunk = chunk_bytes.decode("utf-8").removeprefix(
+                            "data: ")
+                        if chunk != "[DONE]":
+                            timestamp = time.perf_counter()
+                            data = json.loads(chunk)
+
+                            if choices := data.get("choices"):
+                                content = choices[0]["delta"].get("content")
+                                # First token
+                                if ttft == 0.0:
+                                    ttft = timestamp - st
+                                    output.ttft = ttft
+
+                                # Decoding phase
+                                else:
+                                    output.itl.append(timestamp -
+                                                      most_recent_timestamp)
+
+                                generated_text += content or ""
+                            elif usage := data.get("usage"):
+                                output.output_tokens = usage.get(
+                                    "completion_tokens")
+
+                            most_recent_timestamp = timestamp
+
+                    output.generated_text = generated_text
+                    output.success = True
+                    output.latency = most_recent_timestamp - st
+                else:
+                    output.error = response.reason or ""
+                    output.success = False
+        except Exception:
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+
+    if pbar:
+        pbar.update(1)
+    return output
+
+
+async def async_request_gimlet(
+    request_func_input: RequestFuncInput,
+    pbar: Optional[tqdm] = None,
+) -> RequestFuncOutput:
+    """
+    Async request function for Gimlet API.
+
+    Gimlet-specific differences from OpenAI:
+    - Uses string content format (not array format)
+    - Uses X-API-KEY header for authentication
+    - Requires ssl=False for local/dev environments
+    """
+    api_url = request_func_input.api_url
+
+    async with aiohttp.ClientSession(trust_env=True,
+                                     timeout=AIOHTTP_TIMEOUT) as session:
+        # Gimlet expects string content, not array format
+        content = request_func_input.prompt
+        payload = {
+            "model": request_func_input.model_name \
+                if request_func_input.model_name else request_func_input.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": content
+                },
+            ],
+            "temperature": 0.0,
+            "max_completion_tokens": request_func_input.output_len,
+            "stream": True,
+            "stream_options": {
+                "include_usage": True,
+            },
+        }
+        if request_func_input.ignore_eos:
+            payload["ignore_eos"] = request_func_input.ignore_eos
+        if request_func_input.extra_body:
+            payload.update(request_func_input.extra_body)
+        # Gimlet uses X-API-KEY header for authentication
+        headers = {
+            "Content-Type": "application/json",
             "X-API-KEY": os.environ.get('OPENAI_API_KEY', ''),
         }
 
@@ -489,5 +582,5 @@ ASYNC_REQUEST_FUNCS = {
     "tensorrt-llm": async_request_trt_llm,
     "scalellm": async_request_openai_completions,
     "sglang": async_request_openai_completions,
-    "gimlet": async_request_openai_chat_completions,
+    "gimlet": async_request_gimlet,
 }
