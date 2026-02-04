@@ -431,25 +431,6 @@ async def async_request_openai_chat_completions(
     return output
 
 
-async def async_request_gimlet(
-    request_func_input: RequestFuncInput,
-    pbar: Optional[tqdm] = None,
-) -> RequestFuncOutput:
-    """
-    Wrapper for Gimlet API - uses GML_API_KEY with X-API-KEY header.
-    Delegates to async_request_openai_chat_completions.
-    """
-    api_key = os.environ.get("GML_API_KEY")
-    if not api_key:
-        output = RequestFuncOutput()
-        output.error = "GML_API_KEY environment variable not set"
-        if pbar:
-            pbar.update(1)
-        return output
-
-    return await async_request_openai_chat_completions(request_func_input, pbar)
-
-
 def get_model(pretrained_model_name_or_path: str) -> str:
     if os.getenv('VLLM_USE_MODELSCOPE', 'False').lower() == 'true':
         from modelscope import snapshot_download
@@ -505,5 +486,5 @@ ASYNC_REQUEST_FUNCS = {
     "tensorrt-llm": async_request_trt_llm,
     "scalellm": async_request_openai_completions,
     "sglang": async_request_openai_completions,
-    "gimlet": async_request_gimlet,
+    "gimlet": async_request_openai_chat_completions,
 }
