@@ -279,35 +279,51 @@ async def async_request_openai_completions(
                         if not chunk_bytes:
                             continue
 
-                        chunk = chunk_bytes.decode("utf-8").removeprefix(
-                            "data: ")
-                        if chunk != "[DONE]":
-                            data = json.loads(chunk)
+                        chunk_str = chunk_bytes.decode("utf-8")
+                        
+                        # NOTE: Skip SSE comment/ping lines that start with ":"
+                        if chunk_str.startswith(":"):
+                            continue
+                        
+                        # Remove "data: " prefix if present
+                        if chunk_str.startswith("data: "):
+                            chunk = chunk_str[6:]  # Remove "data: " (6 chars)
+                        elif chunk_str.startswith("data:"):
+                            chunk = chunk_str[5:]  # Remove "data:" (5 chars)
+                        else:
+                            chunk = chunk_str
+                        
+                        # Skip empty chunks or [DONE] marker
+                        chunk = chunk.strip()
+                        if not chunk or chunk == "[DONE]":
+                            continue
+                        
+                        data = json.loads(chunk)
 
-                            # NOTE: Some completion API might have a last
-                            # usage summary response without a token so we
-                            # want to check a token was generated
-                            if choices := data.get("choices"):
-                                # Note that text could be empty here
-                                # e.g. for special tokens
-                                text = choices[0].get("text")
-                                timestamp = time.perf_counter()
-                                # First token
-                                if not first_chunk_received:
-                                    first_chunk_received = True
-                                    ttft = time.perf_counter() - st
-                                    output.ttft = ttft
+                        # NOTE: Some completion API might have a last
+                        # usage summary response without a token so we
+                        # want to check a token was generated
+                        if choices := data.get("choices"):
+                            # Note that text could be empty here
+                            # e.g. for special tokens
+                            text = choices[0].get("text")
+                            timestamp = time.perf_counter()
+                            # First token
+                            if not first_chunk_received:
+                                first_chunk_received = True
+                                ttft = time.perf_counter() - st
+                                output.ttft = ttft
 
-                                # Decoding phase
-                                else:
-                                    output.itl.append(timestamp -
-                                                      most_recent_timestamp)
+                            # Decoding phase
+                            else:
+                                output.itl.append(timestamp -
+                                                  most_recent_timestamp)
 
-                                most_recent_timestamp = timestamp
-                                generated_text += text or ""
-                            elif usage := data.get("usage"):
-                                output.output_tokens = usage.get(
-                                    "completion_tokens")
+                            most_recent_timestamp = timestamp
+                            generated_text += text or ""
+                        elif usage := data.get("usage"):
+                            output.output_tokens = usage.get(
+                                "completion_tokens")
                     if first_chunk_received:
                         output.success = True
                     else:
@@ -385,11 +401,27 @@ async def async_request_openai_chat_completions(
                         if not chunk_bytes:
                             continue
 
-                        chunk = chunk_bytes.decode("utf-8").removeprefix(
-                            "data: ")
-                        if chunk != "[DONE]":
-                            timestamp = time.perf_counter()
-                            data = json.loads(chunk)
+                        chunk_str = chunk_bytes.decode("utf-8")
+                        
+                        # NOTE: Skip SSE comment/ping lines that start with ":"
+                        if chunk_str.startswith(":"):
+                            continue
+                        
+                        # Remove "data: " prefix if present
+                        if chunk_str.startswith("data: "):
+                            chunk = chunk_str[6:]  # Remove "data: " (6 chars)
+                        elif chunk_str.startswith("data:"):
+                            chunk = chunk_str[5:]  # Remove "data:" (5 chars)
+                        else:
+                            chunk = chunk_str
+                        
+                        # Skip empty chunks or [DONE] marker
+                        chunk = chunk.strip()
+                        if not chunk or chunk == "[DONE]":
+                            continue
+                        
+                        timestamp = time.perf_counter()
+                        data = json.loads(chunk)
 
                             if choices := data.get("choices"):
                                 content = choices[0]["delta"].get("content")
