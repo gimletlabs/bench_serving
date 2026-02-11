@@ -980,7 +980,6 @@ def main(args: argparse.Namespace):
 
     goodput_config_dict = check_goodput_args(args)
 
-    # Read extra_body from environment variable or CLI argument
     extra_body = None
     extra_body_str = args.extra_body or os.environ.get("EXTRA_BODY")
     if extra_body_str:
@@ -1378,7 +1377,6 @@ if __name__ == "__main__":
         help="Extra body parameters as JSON string to include in API requests. "
         "Can also be set via EXTRA_BODY environment variable. "
         "This will be merged into the request payload. "
-        "For Open Router, use this to set 'providers' field, e.g., "
         "--extra-body '{\"providers\": {...}}'",
     )
 
