@@ -447,6 +447,13 @@ async def async_request_openai_chat_completions(
                                 print(f"DEBUG: Skipping malformed JSON chunk: {repr(chunk)} (Error: {e})")
                                 continue
                             
+                            # Check for usage in every chunk (may come with or without choices)
+                            if usage := data.get("usage"):
+                                completion_tokens = usage.get("completion_tokens")
+                                if completion_tokens is not None:
+                                    output.output_tokens = completion_tokens
+                            
+                            # Process choices/content if present
                             if choices := data.get("choices"):
                                 content = choices[0]["delta"].get("content")
                                 # First token
@@ -460,9 +467,6 @@ async def async_request_openai_chat_completions(
                                                       most_recent_timestamp)
 
                                 generated_text += content or ""
-                            elif usage := data.get("usage"):
-                                output.output_tokens = usage.get(
-                                    "completion_tokens")
 
                             most_recent_timestamp = timestamp
 
