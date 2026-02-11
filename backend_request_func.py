@@ -275,55 +275,67 @@ async def async_request_openai_completions(
                 if response.status == 200:
                     first_chunk_received = False
                     async for chunk_bytes in response.content:
-                        chunk_bytes = chunk_bytes.strip()
                         if not chunk_bytes:
                             continue
-
+                        
+                        # Decode and split by newlines (SSE can have multiple events per chunk)
                         chunk_str = chunk_bytes.decode("utf-8")
+                        lines = chunk_str.split('\n')
                         
-                        # NOTE: Skip SSE comment/ping lines that start with ":"
-                        if chunk_str.startswith(":"):
-                            continue
-                        
-                        # Remove "data: " prefix if present
-                        if chunk_str.startswith("data: "):
-                            chunk = chunk_str[6:]  # Remove "data: " (6 chars)
-                        elif chunk_str.startswith("data:"):
-                            chunk = chunk_str[5:]  # Remove "data:" (5 chars)
-                        else:
-                            chunk = chunk_str
-                        
-                        # Skip empty chunks or [DONE] marker
-                        chunk = chunk.strip()
-                        if not chunk or chunk == "[DONE]":
-                            continue
-                        
-                        data = json.loads(chunk)
-
-                        # NOTE: Some completion API might have a last
-                        # usage summary response without a token so we
-                        # want to check a token was generated
-                        if choices := data.get("choices"):
-                            # Note that text could be empty here
-                            # e.g. for special tokens
-                            text = choices[0].get("text")
-                            timestamp = time.perf_counter()
-                            # First token
-                            if not first_chunk_received:
-                                first_chunk_received = True
-                                ttft = time.perf_counter() - st
-                                output.ttft = ttft
-
-                            # Decoding phase
+                        for line in lines:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            
+                            # NOTE: Skip SSE comment/ping lines that start with ":"
+                            if line.startswith(":"):
+                                continue
+                            
+                            # Remove "data: " prefix if present
+                            if line.startswith("data: "):
+                                chunk = line[6:]  # Remove "data: " (6 chars)
+                            elif line.startswith("data:"):
+                                chunk = line[5:]  # Remove "data:" (5 chars)
                             else:
-                                output.itl.append(timestamp -
-                                                  most_recent_timestamp)
+                                chunk = line
+                            
+                            # Skip empty chunks or [DONE] marker
+                            chunk = chunk.strip()
+                            if not chunk or chunk == "[DONE]":
+                                continue
+                            
+                            # Try to parse JSON, skip if it fails (might be malformed)
+                            try:
+                                data = json.loads(chunk)
+                            except json.JSONDecodeError as e:
+                                # Skip malformed JSON chunks
+                                print(f"DEBUG: Skipping malformed JSON chunk: {repr(chunk)} (Error: {e})")
+                                continue
 
-                            most_recent_timestamp = timestamp
-                            generated_text += text or ""
-                        elif usage := data.get("usage"):
-                            output.output_tokens = usage.get(
-                                "completion_tokens")
+                            # NOTE: Some completion API might have a last
+                            # usage summary response without a token so we
+                            # want to check a token was generated
+                            if choices := data.get("choices"):
+                                # Note that text could be empty here
+                                # e.g. for special tokens
+                                text = choices[0].get("text")
+                                timestamp = time.perf_counter()
+                                # First token
+                                if not first_chunk_received:
+                                    first_chunk_received = True
+                                    ttft = time.perf_counter() - st
+                                    output.ttft = ttft
+
+                                # Decoding phase
+                                else:
+                                    output.itl.append(timestamp -
+                                                      most_recent_timestamp)
+
+                                most_recent_timestamp = timestamp
+                                generated_text += text or ""
+                            elif usage := data.get("usage"):
+                                output.output_tokens = usage.get(
+                                    "completion_tokens")
                     if first_chunk_received:
                         output.success = True
                     else:
@@ -397,32 +409,44 @@ async def async_request_openai_chat_completions(
                                     headers=headers) as response:
                 if response.status == 200:
                     async for chunk_bytes in response.content:
-                        chunk_bytes = chunk_bytes.strip()
                         if not chunk_bytes:
                             continue
-
+                        
+                        # Decode and split by newlines (SSE can have multiple events per chunk)
                         chunk_str = chunk_bytes.decode("utf-8")
+                        lines = chunk_str.split('\n')
                         
-                        # NOTE: Skip SSE comment/ping lines that start with ":"
-                        if chunk_str.startswith(":"):
-                            continue
-                        
-                        # Remove "data: " prefix if present
-                        if chunk_str.startswith("data: "):
-                            chunk = chunk_str[6:]  # Remove "data: " (6 chars)
-                        elif chunk_str.startswith("data:"):
-                            chunk = chunk_str[5:]  # Remove "data:" (5 chars)
-                        else:
-                            chunk = chunk_str
-                        
-                        # Skip empty chunks or [DONE] marker
-                        chunk = chunk.strip()
-                        if not chunk or chunk == "[DONE]":
-                            continue
-                        
-                        timestamp = time.perf_counter()
-                        data = json.loads(chunk)
-
+                        for line in lines:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            
+                            # NOTE: Skip SSE comment/ping lines that start with ":"
+                            if line.startswith(":"):
+                                continue
+                            
+                            # Remove "data: " prefix if present
+                            if line.startswith("data: "):
+                                chunk = line[6:]  # Remove "data: " (6 chars)
+                            elif line.startswith("data:"):
+                                chunk = line[5:]  # Remove "data:" (5 chars)
+                            else:
+                                chunk = line
+                            
+                            # Skip empty chunks or [DONE] marker
+                            chunk = chunk.strip()
+                            if not chunk or chunk == "[DONE]":
+                                continue
+                            
+                            # Try to parse JSON, skip if it fails (might be malformed)
+                            try:
+                                timestamp = time.perf_counter()
+                                data = json.loads(chunk)
+                            except json.JSONDecodeError as e:
+                                # Skip malformed JSON chunks
+                                print(f"DEBUG: Skipping malformed JSON chunk: {repr(chunk)} (Error: {e})")
+                                continue
+                            
                             if choices := data.get("choices"):
                                 content = choices[0]["delta"].get("content")
                                 # First token
