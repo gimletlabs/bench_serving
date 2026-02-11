@@ -592,6 +592,7 @@ async def benchmark(
     goodput_config_dict: Dict[str, float],
     max_concurrency: Optional[int],
     lora_modules: Optional[List[str]],
+    extra_body: Optional[Dict[str, Any]] = None,
 ):
     if backend in ASYNC_REQUEST_FUNCS:
         request_func = ASYNC_REQUEST_FUNCS[backend]
@@ -616,6 +617,7 @@ async def benchmark(
         best_of=best_of,
         multi_modal_content=test_mm_content,
         ignore_eos=ignore_eos,
+        extra_body=extra_body,
     )
 
     test_output = await request_func(request_func_input=test_input)
@@ -642,7 +644,8 @@ async def benchmark(
                                          logprobs=logprobs,
                                          best_of=best_of,
                                          multi_modal_content=test_mm_content,
-                                         ignore_eos=ignore_eos)
+                                         ignore_eos=ignore_eos,
+                                         extra_body=extra_body)
         profile_output = await request_func(request_func_input=profile_input)
         if profile_output.success:
             print("Profiler started")
@@ -691,7 +694,8 @@ async def benchmark(
                                               logprobs=logprobs,
                                               best_of=best_of,
                                               multi_modal_content=mm_content,
-                                              ignore_eos=ignore_eos)
+                                              ignore_eos=ignore_eos,
+                                              extra_body=extra_body)
         tasks.append(
             asyncio.create_task(
                 limited_request_func(request_func_input=request_func_input,
@@ -708,6 +712,7 @@ async def benchmark(
             output_len=test_output_len,
             logprobs=logprobs,
             best_of=best_of,
+            extra_body=extra_body,
         )
         profile_output = await request_func(request_func_input=profile_input)
         if profile_output.success:
@@ -975,6 +980,17 @@ def main(args: argparse.Namespace):
 
     goodput_config_dict = check_goodput_args(args)
 
+    # Read extra_body from environment variable or CLI argument
+    extra_body = None
+    extra_body_str = args.extra_body or os.environ.get("EXTRA_BODY")
+    if extra_body_str:
+        try:
+            extra_body = json.loads(extra_body_str)
+            if not isinstance(extra_body, dict):
+                raise ValueError("EXTRA_BODY must be a JSON object (dict)")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in EXTRA_BODY: {e}")
+
     # Avoid GC processing "static" data - reduce pause times.
     gc.collect()
     gc.freeze()
@@ -1002,6 +1018,7 @@ def main(args: argparse.Namespace):
             goodput_config_dict=goodput_config_dict,
             max_concurrency=args.max_concurrency,
             lora_modules=args.lora_modules,
+            extra_body=extra_body,
         ))
 
     # Save config and results to json
@@ -1353,6 +1370,17 @@ if __name__ == "__main__":
                         help="A subset of LoRA module names passed in when "
                         "launching the server. For each request, the "
                         "script chooses a LoRA module at random.")
+
+    parser.add_argument(
+        "--extra-body",
+        type=str,
+        default=None,
+        help="Extra body parameters as JSON string to include in API requests. "
+        "Can also be set via EXTRA_BODY environment variable. "
+        "This will be merged into the request payload. "
+        "For Open Router, use this to set 'providers' field, e.g., "
+        "--extra-body '{\"providers\": {...}}'",
+    )
 
     args = parser.parse_args()
     main(args)
