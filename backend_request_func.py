@@ -17,6 +17,40 @@ from transformers import (AutoTokenizer, PreTrainedTokenizer,
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=6 * 60 * 60)
 
 
+def extract_sse_chunk(line: str) -> Optional[str]:
+    """
+    Extract the JSON chunk from an SSE line.
+    
+    Args:
+        line: A single line from the SSE stream
+        
+    Returns:
+        The extracted chunk string, or None if the line should be skipped
+    """
+    line = line.strip()
+    if not line:
+        return None
+    
+    # Skip SSE comment/ping lines that start with ":".
+    if line.startswith(":"):
+        return None
+    
+    # Remove "data: " prefix if present.
+    if line.startswith("data: "):
+        chunk = line[6:]  # Remove "data: ".
+    elif line.startswith("data:"):
+        chunk = line[5:]  # Remove "data:".
+    else:
+        chunk = line
+    
+    # Skip empty chunks or [DONE] marker.
+    chunk = chunk.strip()
+    if not chunk or chunk == "[DONE]":
+        return None
+    
+    return chunk
+
+
 @dataclass
 class RequestFuncInput:
     prompt: str
@@ -278,37 +312,19 @@ async def async_request_openai_completions(
                         if not chunk_bytes:
                             continue
                         
-                        # Decode and split by newlines (SSE can have multiple events per chunk)
+                        # Decode and split by newlines (SSE can have multiple events per chunk).
                         chunk_str = chunk_bytes.decode("utf-8")
                         lines = chunk_str.split('\n')
                         
                         for line in lines:
-                            line = line.strip()
-                            if not line:
+                            chunk = extract_sse_chunk(line)
+                            if chunk is None:
                                 continue
                             
-                            # NOTE: Skip SSE comment/ping lines that start with ":"
-                            if line.startswith(":"):
-                                continue
-                            
-                            # Remove "data: " prefix if present
-                            if line.startswith("data: "):
-                                chunk = line[6:]  # Remove "data: " (6 chars)
-                            elif line.startswith("data:"):
-                                chunk = line[5:]  # Remove "data:" (5 chars)
-                            else:
-                                chunk = line
-                            
-                            # Skip empty chunks or [DONE] marker
-                            chunk = chunk.strip()
-                            if not chunk or chunk == "[DONE]":
-                                continue
-                            
-                            # Try to parse JSON, skip if it fails (might be malformed)
+                            # Try to parse JSON, skip if it fails.
                             try:
                                 data = json.loads(chunk)
                             except json.JSONDecodeError as e:
-                                # Skip malformed JSON chunks
                                 print(f"DEBUG: Skipping malformed JSON chunk: {repr(chunk)} (Error: {e})")
                                 continue
 
@@ -412,48 +428,28 @@ async def async_request_openai_chat_completions(
                         if not chunk_bytes:
                             continue
                         
-                        # Decode and split by newlines (SSE can have multiple events per chunk)
+                        # Decode and split by newlines.
                         chunk_str = chunk_bytes.decode("utf-8")
                         lines = chunk_str.split('\n')
                         
                         for line in lines:
-                            line = line.strip()
-                            if not line:
+                            chunk = extract_sse_chunk(line)
+                            if chunk is None:
                                 continue
                             
-                            # NOTE: Skip SSE comment/ping lines that start with ":"
-                            if line.startswith(":"):
-                                continue
-                            
-                            # Remove "data: " prefix if present
-                            if line.startswith("data: "):
-                                chunk = line[6:]  # Remove "data: " (6 chars)
-                            elif line.startswith("data:"):
-                                chunk = line[5:]  # Remove "data:" (5 chars)
-                            else:
-                                chunk = line
-                            
-                            # Skip empty chunks or [DONE] marker
-                            chunk = chunk.strip()
-                            if not chunk or chunk == "[DONE]":
-                                continue
-                            
-                            # Try to parse JSON, skip if it fails (might be malformed)
+                            # Try to parse JSON, skip if it fails.
                             try:
                                 timestamp = time.perf_counter()
                                 data = json.loads(chunk)
                             except json.JSONDecodeError as e:
-                                # Skip malformed JSON chunks
                                 print(f"DEBUG: Skipping malformed JSON chunk: {repr(chunk)} (Error: {e})")
                                 continue
                             
-                            # Check for usage in every chunk (may come with or without choices)
                             if usage := data.get("usage"):
                                 completion_tokens = usage.get("completion_tokens")
                                 if completion_tokens is not None:
                                     output.output_tokens = completion_tokens
                             
-                            # Process choices/content if present
                             if choices := data.get("choices"):
                                 content = choices[0]["delta"].get("content")
                                 # First token
