@@ -520,10 +520,13 @@ async def async_request_gimlet(
             payload["ignore_eos"] = request_func_input.ignore_eos
         if request_func_input.extra_body:
             payload.update(request_func_input.extra_body)
-        # Gimlet uses X-API-KEY header for authentication
+        token = os.environ.get('OPENAI_API_KEY', '')
+        # The in-cluster openai-adapter expects the endpoint-scoped token as both
+        # X-API-KEY and Authorization, while the cloud path accepts X-API-KEY.
         headers = {
             "Content-Type": "application/json",
-            "X-API-KEY": os.environ.get('OPENAI_API_KEY', ''),
+            "X-API-KEY": token,
+            "Authorization": f"Bearer {token}",
         }
 
         output = RequestFuncOutput()
