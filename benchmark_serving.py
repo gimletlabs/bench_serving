@@ -665,7 +665,6 @@ async def benchmark(
     completed_requests = 0
     successful_requests = 0
     failed_requests = 0
-    progress_interval = 1 if total_requests <= 20 else max(1, total_requests // 10)
 
     # This can be used once the minimum Python version is 3.10 or higher,
     # and it will simplify the code in limited_request_func.
@@ -692,14 +691,11 @@ async def benchmark(
             else:
                 failed_requests += 1
 
-            if (completed_requests == 1 or
-                    completed_requests == total_requests or
-                    completed_requests % progress_interval == 0):
-                print(
-                    "Benchmark progress: "
-                    f"{completed_requests}/{total_requests} completed "
-                    f"(success={successful_requests}, failed={failed_requests})"
-                )
+            print(
+                "Benchmark progress: "
+                f"{completed_requests}/{total_requests} completed "
+                f"(success={successful_requests}, failed={failed_requests})"
+            )
 
         return output
 
