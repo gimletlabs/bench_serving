@@ -659,7 +659,12 @@ async def benchmark(
     print(f"Burstiness factor: {burstiness} ({distribution})")
     print(f"Maximum request concurrency: {max_concurrency}")
 
-    pbar = None if disable_tqdm else tqdm(total=len(input_requests))
+    total_requests = len(input_requests)
+    pbar = None if disable_tqdm else tqdm(total=total_requests)
+    progress_lock = asyncio.Lock()
+    completed_requests = 0
+    successful_requests = 0
+    failed_requests = 0
 
     # This can be used once the minimum Python version is 3.10 or higher,
     # and it will simplify the code in limited_request_func.
@@ -669,12 +674,30 @@ async def benchmark(
                  if max_concurrency else None)
 
     async def limited_request_func(request_func_input, pbar):
+        nonlocal completed_requests, successful_requests, failed_requests
+
         if semaphore is None:
-            return await request_func(request_func_input=request_func_input,
-                                      pbar=pbar)
-        async with semaphore:
-            return await request_func(request_func_input=request_func_input,
-                                      pbar=pbar)
+            output = await request_func(request_func_input=request_func_input,
+                                        pbar=pbar)
+        else:
+            async with semaphore:
+                output = await request_func(request_func_input=request_func_input,
+                                            pbar=pbar)
+
+        async with progress_lock:
+            completed_requests += 1
+            if output.success:
+                successful_requests += 1
+            else:
+                failed_requests += 1
+
+            print(
+                "Benchmark progress: "
+                f"{completed_requests}/{total_requests} completed "
+                f"(success={successful_requests}, failed={failed_requests})"
+            )
+
+        return output
 
     benchmark_start_time = time.perf_counter()
     tasks: List[asyncio.Task] = []
